@@ -6,16 +6,15 @@ from arrow.core.logic import (
     build_arrows,
     can_fly,
     count_arrows,
-    fly_track,
+    fly_distance,
 )
-from arrow.core.utils import darken, lerp_color
+from arrow.core.utils import lerp_color
 
 __all__ = [
     "Arrow",
     "build_arrows",
     "can_fly",
     "count_arrows",
-    "fly_track",
-    "darken",
+    "fly_distance",
     "lerp_color",
 ]

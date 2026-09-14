@@ -26,10 +26,9 @@ from arrow.config import (
     WIDTH,
 )
 from arrow.core.logic import count_arrows
-from arrow.core.utils import darken
 from arrow.levels import LEVELS
 from arrow.view.animations import FlyAnim
-from arrow.view.ui import draw_arrow_full, draw_arrow_polyline
+from arrow.view.ui import draw_arrow_head
 
 
 def draw(game, mouse_pos):
@@ -67,10 +66,10 @@ def draw_start(game, mouse_pos):
     title = game.font_title.render("箭头消除", True, TEXT)
     game.screen.blit(title, title.get_rect(center=(WIDTH // 2, 170)))
     rules = [
-        "点击箭头头部：它指向的方向到边界之间没有其它箭头，就会飞出去",
-        "被挡住则算碰撞：箭头不动，失误 -1",
-        "箭头有身体（1~4 格），只有头部能点，身体同样会挡路",
+        "点击箭头：它指向的方向到边界之间没有其它箭头，就会飞出去",
+        "被挡住则算碰撞：箭头晃动变红，失误 -1",
         "清空全部箭头过关，失误用完失败",
+        "R 重开本关，Esc 返回开始界面",
     ]
     for i, line in enumerate(rules):
         text = game.font_msg.render(line, True, DIM)
@@ -107,38 +106,23 @@ def draw_play(game, mouse_pos):
                 game.screen, CELL_LINE, rect.inflate(-6, -6), 2, border_radius=10
             )
 
-    # 静态箭头（整支一起画）
+    # 静态箭头
     animated_ids = {a.arrow.id for a in game.anims}
     for arrow in game.arrows:
         if not arrow.alive or arrow.id in animated_ids:
             continue
         cx = GRID_X + arrow.head[1] * CELL + CELL // 2
         cy = GRID_Y + arrow.head[0] * CELL + CELL // 2
-        color = ARROW_COLORS[arrow.direction]
-        draw_arrow_full(game.screen, cx, cy, arrow, color, darken(color))
+        draw_arrow_head(game.screen, cx, cy, arrow.direction,
+                        ARROW_COLORS[arrow.direction])
 
     # 动画中的箭头（飞出时裁到棋盘范围内，看起来像滑出棋盘）
     for anim in game.anims:
+        cx = GRID_X + anim.c * CELL + CELL // 2 + anim.offset[0]
+        cy = GRID_Y + anim.r * CELL + CELL // 2 + anim.offset[1]
         if isinstance(anim, FlyAnim):
             game.screen.set_clip(pygame.Rect(GRID_X, GRID_Y, GRID_W, GRID_W))
-            draw_arrow_polyline(
-                game.screen,
-                anim.points(),
-                anim.direction,
-                anim.head_color(),
-                anim.body_color(),
-            )
-        else:
-            cx = GRID_X + anim.c * CELL + CELL // 2 + anim.offset[0]
-            cy = GRID_Y + anim.r * CELL + CELL // 2 + anim.offset[1]
-            draw_arrow_full(
-                game.screen,
-                cx,
-                cy,
-                anim.arrow,
-                anim.head_color(),
-                anim.body_color(),
-            )
+        draw_arrow_head(game.screen, cx, cy, anim.direction, anim.head_color())
         game.screen.set_clip(None)
 
     hint = game.font_small.render("R 重开本关    Esc 返回开始", True, DIM)

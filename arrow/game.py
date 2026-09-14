@@ -102,7 +102,7 @@ class Game:
         return (y - GRID_Y) // CELL, (x - GRID_X) // CELL
 
     def try_click(self, r, c):
-        """点击某个格子：空格提示、身体提示、头部可飞则滑出、被挡则碰撞扣失误。"""
+        """点击某个格子：空格提示、可飞则滑出、被挡则碰撞扣失误。"""
         value = self.board[r][c]
         if value == EMPTY:
             self.message = f"({r}, {c}) 是空格子"
@@ -111,9 +111,6 @@ class Game:
         arrow = self.arrow_by_id[value]
         if any(a.arrow is arrow for a in self.anims):
             return  # 动画中的箭头锁住，防连点
-        if (r, c) != arrow.head:
-            self.message = "只能点箭头头部（身体点不动）"
-            return
         if self.mistakes_left <= 0:
             return  # 失误已用完：等动画结束进失败界面
 
@@ -161,10 +158,9 @@ class Game:
         finished = [a for a in self.anims if a.done]
         for anim in finished:
             self.anims.remove(anim)
-            if isinstance(anim, FlyAnim):  # 飞完了才把整支箭头从棋盘移除
+            if isinstance(anim, FlyAnim):  # 飞完了才把箭头从棋盘移除
                 arrow = anim.arrow
-                for r, c in arrow.cells:
-                    self.board[r][c] = EMPTY
+                self.board[arrow.head[0]][arrow.head[1]] = EMPTY
                 arrow.alive = False
 
         # 动画全部结束、且还在游戏中时，判定胜负

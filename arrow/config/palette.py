@@ -14,7 +14,6 @@ BTN = (58, 64, 90)
 BTN_HOVER = (78, 86, 120)
 BTN_PRIMARY = (52, 120, 210)
 BTN_PRIMARY_HOVER = (74, 146, 238)
-BODY_DARKEN = 0.78  # 身体颜色压暗比例，用来区分头（亮）和身体（暗）
 ARROW_COLORS = {
     UP: (92, 158, 255),
     DOWN: (88, 201, 129),

@@ -5,8 +5,6 @@
 """
 
 from arrow.config.layout import (
-    BODY_R,
-    BODY_W,
     CELL,
     FLY_MARGIN,
     FPS,
@@ -17,13 +15,11 @@ from arrow.config.layout import (
     HEAD_SIZE,
     HEIGHT,
     N,
-    TAIL_EXT,
     WIDTH,
 )
 from arrow.config.palette import (
     ARROW_COLORS,
     BG,
-    BODY_DARKEN,
     BTN,
     BTN_HOVER,
     BTN_PRIMARY,
@@ -39,8 +35,6 @@ from arrow.config.rules import (
     DOWN,
     EMPTY,
     LEFT,
-    MAX_LENGTH,
-    MIN_LENGTH,
     MISTAKES_PER_LEVEL,
     RIGHT,
     STATE_LOSE,
@@ -61,9 +55,6 @@ __all__ = [
     "GRID_X",
     "GRID_Y",
     # 箭头几何
-    "TAIL_EXT",
-    "BODY_W",
-    "BODY_R",
     "HEAD_SIZE",
     "HEAD_BASE",
     "FLY_MARGIN",
@@ -78,7 +69,6 @@ __all__ = [
     "BTN_HOVER",
     "BTN_PRIMARY",
     "BTN_PRIMARY_HOVER",
-    "BODY_DARKEN",
     "ARROW_COLORS",
     # rules
     "EMPTY",
@@ -88,8 +78,6 @@ __all__ = [
     "RIGHT",
     "DIRS",
     "MISTAKES_PER_LEVEL",
-    "MIN_LENGTH",
-    "MAX_LENGTH",
     "STATE_START",
     "STATE_PLAY",
     "STATE_WIN",
