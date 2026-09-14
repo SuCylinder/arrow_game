@@ -138,6 +138,23 @@ class Game:
         """已解锁关卡数（1 起，受存档与总关卡数限制）。"""
         return max(1, min(self.progress.get("unlocked", 1), len(LEVELS)))
 
+    def has_progress(self):
+        """存档里是否有进度（解锁超过第 1 关或已有最好成绩）。"""
+        return self.unlocked_count() > 1 or bool(self.progress.get("best"))
+
+    def continue_level(self):
+        """继续游戏：进入存档中已解锁的最后一关（无进度则从第 1 关开始）。"""
+        self.level_index = self.unlocked_count() - 1
+        self.random_defs = None
+        self.load_level()
+
+    def total_stars(self):
+        """存档中各关星级之和（用于开始界面进度摘要）。"""
+        return sum(
+            min(3, max(0, v.get("stars", 0)))
+            for v in self.progress.get("best", {}).values()
+        )
+
     def random_level(self):
         """生成一关随机关卡（不写入存档，通关按钮为「换一关」）。"""
         self.random_defs = generate_level()
@@ -278,6 +295,8 @@ class Game:
         stars = stars_for(self.mistakes_left)
         score = score_for(total, self.mistakes_left, self.elapsed)
         best = None
+        saved = False
+        new_record = False
         if self.is_random():
             self.message = "随机挑战完成！"
         elif self.ai_used:
@@ -285,8 +304,8 @@ class Game:
         else:
             key = str(self.level_index + 1)
             best = self.progress["best"].get(key)
-            improved = (best is None or score > best["score"])
-            if improved:
+            new_record = (best is None or score > best["score"])
+            if new_record:
                 self.progress["best"][key] = {
                     "stars": stars, "score": score, "time": self.elapsed,
                 }
@@ -295,10 +314,11 @@ class Game:
                 self.progress["unlocked"] = min(
                     self.level_index + 2, len(LEVELS)
                 )
-            save_mod.store(self.progress, self.save_path)
+            saved = save_mod.store(self.progress, self.save_path)
         self.result = {
             "stars": stars, "score": score, "time": self.elapsed,
             "best": best, "random": self.is_random(), "ai": self.ai_used,
+            "saved": saved, "new_record": new_record,
         }
         self.ai_mode = False
         self.state = STATE_WIN

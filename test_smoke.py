@@ -123,7 +123,8 @@ for idx, order in enumerate(ORDERS):
     check(f"第{idx + 1}关所有箭头 alive 为 False",
           all(not a.alive for a in game.arrows))
 
-# 开始界面 → 开始游戏
+# 开始界面 → 开始游戏（先清空进度，验证全新开局路径）
+game.progress = save_mod.default_data()
 game.to_start()
 check("返回开始界面", game.state == cfg.STATE_START)
 start_btn = next(b for b in game.buttons if b.label == "开始游戏")
@@ -440,6 +441,20 @@ check("底栏含提示/撤销/AI 演示按钮",
       all(any(b.label == name for b in game.buttons)
           for name in ("提示", "撤销", "AI 演示")))
 
+# AI 演示标签：移到 HUD 第二行，且不得再与底栏计时重叠
+game.toggle_ai()
+game.draw()
+check("AI 演示标签已绘制在 HUD 第二行",
+      region_has_text(cfg.HUD_AI_TAG_POS[0], cfg.HUD_AI_TAG_POS[1] - 16, 230, 32))
+bar_has_gold = any(
+    near(game.screen.get_at((x, y)), cfg.GOLD, 30)
+    for x in range(cfg.TIMER_POS[0], cfg.TIMER_POS[0] + 220, 2)
+    for y in range(cfg.TIMER_POS[1] - 16, cfg.TIMER_POS[1] + 16, 2)
+)
+check("AI 演示标签不再与底栏计时重叠（计时区无金色像素）", not bar_has_gold)
+game.toggle_ai()
+game.draw()
+
 for st, tag in [(cfg.STATE_LOSE, "失败"), (cfg.STATE_WIN, "通关")]:
     game.state = st
     game._build_buttons()
@@ -499,12 +514,16 @@ check("通关界面星级已绘制",
 check("通关界面得分用时已绘制",
       region_has_text(cfg.WIDTH // 2 - 220, cfg.RESULT_SCORE_Y - 20, 440, 40))
 
-# 开始界面：三个按钮
+# 开始界面：三个按钮（此时存档已有第 1 关成绩 → 主按钮为继续）
 game.to_start()
 game.draw()
-check("开始界面含 开始游戏 / 选择关卡 / 随机挑战",
+check("开始界面主按钮按存档显示 继续/开始",
+      any(b.label.startswith(("开始游戏", "继续第")) for b in game.buttons))
+check("开始界面含 选择关卡 / 随机挑战",
       all(any(b.label == name for b in game.buttons)
-          for name in ("开始游戏", "选择关卡", "随机挑战")))
+          for name in ("选择关卡", "随机挑战")))
+check("开始界面显示存档进度摘要",
+      region_has_text(cfg.WIDTH // 2 - 230, cfg.START_PROGRESS_Y - 16, 460, 32))
 
 # 关卡选择界面：标题、卡片、锁定与解锁样式
 game.progress["unlocked"] = 2
@@ -724,10 +743,20 @@ check("通关写入存档最好成绩",
       fresh.progress["best"].get("1", {}).get("stars") == 3)
 check("通关解锁第 2 关", fresh.unlocked_count() >= 2)
 check("存档文件已落盘", os.path.exists(save_path2))
+check("通关结果标记新纪录", fresh.result.get("new_record") is True
+      and fresh.result.get("saved") is True)
 reloaded = Game(save_path=save_path2)
 check("存档可被重新读取（解锁与成绩保留）",
       reloaded.unlocked_count() >= 2
       and reloaded.progress["best"].get("1", {}).get("stars") == 3)
+check("有存档时开始界面主按钮为「继续第 N 关」",
+      reloaded.has_progress()
+      and any(b.label.startswith("继续第") for b in reloaded.buttons))
+check("存档累计星数统计正确", reloaded.total_stars() == 3)
+reloaded.continue_level()
+check("「继续」直接进入已解锁的最后一关",
+      reloaded.state == cfg.STATE_PLAY
+      and reloaded.level_index == reloaded.unlocked_count() - 1)
 
 # --- 关卡选择 ---
 reloaded.to_select()
@@ -907,7 +936,7 @@ class SpyGame(real_game_cls):
     """记录实例，便于从外部断言主循环里的真实状态。"""
 
     def __init__(self):
-        super().__init__()
+        super().__init__(save_path=os.path.join(_tmpdir, "main_save.json"))
         created.append(self)
 
 
@@ -928,10 +957,11 @@ time.sleep(2.0)
 check("真实入口：主循环启动", t.is_alive() and bool(created))
 
 live = created[0]
-start_btn_rect = next(b.rect for b in live.buttons if b.label == "开始游戏")
-click_event(start_btn_rect.center)             # 开始游戏按钮（按实际布局定位）
+start_btn_rect = next(b.rect for b in live.buttons
+                      if b.label in ("开始游戏", "继续第 1 关"))
+click_event(start_btn_rect.center)             # 主按钮（按实际布局定位）
 time.sleep(0.6)
-check("真实入口：点「开始游戏」进入 PLAY",
+check("真实入口：点主按钮进入 PLAY",
       live.state == cfg.STATE_PLAY and live.level_index == 0)
 
 click_event(cell_center(4, 3))                 # 第 1 关参考解第一支

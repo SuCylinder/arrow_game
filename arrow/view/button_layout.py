@@ -60,11 +60,15 @@ def build_buttons(game):
     """按 game.state 返回按钮列表，回调绑定到 game 的方法。"""
     buttons = []
     if game.state == STATE_START:
+        if game.has_progress():
+            label, callback = f"继续第 {game.unlocked_count()} 关", game.continue_level
+        else:
+            label, callback = "开始游戏", game.start_game
         buttons.append(
             Button(
                 (WIDTH // 2 - BTN_W // 2, START_BTN_Y, BTN_W, BTN_H),
-                "开始游戏",
-                game.start_game,
+                label,
+                callback,
                 primary=True,
             )
         )

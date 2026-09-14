@@ -22,10 +22,12 @@ from arrow.config import (
     GRID_X,
     GRID_Y,
     HINT,
+    HUD_AI_TAG_POS,
     HUD_DOT_R,
     HUD_DOT_STEP,
     HUD_DOT_X,
     HUD_PANEL,
+    HUD_PANEL_AI_H,
     HUD_TEXT_X,
     HUD_TEXT_Y,
     LEFT,
@@ -50,6 +52,7 @@ from arrow.config import (
     START_DECO_SIZE,
     START_DECO_Y,
     START_RULES_CENTER,
+    START_PROGRESS_Y,
     START_TITLE_Y,
     STATE_LOSE,
     STATE_PLAY,
@@ -126,6 +129,20 @@ def draw_start(game, mouse_pos):
     for btn in game.buttons:
         btn.draw(game.screen, game.font_btn, mouse_pos)
 
+    # 底部存档进度摘要（让存档在开始界面可见）
+    if game.has_progress():
+        progress = game.font_small.render(
+            f"存档进度：已解锁 {game.unlocked_count()} / {len(LEVELS)} 关"
+            f" · 累计 {game.total_stars()} / {len(LEVELS) * 3} 星",
+            True, GOLD,
+        )
+    else:
+        progress = game.font_small.render(
+            "暂无存档：通关后自动保存进度与最好成绩", True, PANEL_LINE
+        )
+    game.screen.blit(progress, progress.get_rect(
+        center=(WIDTH // 2, START_PROGRESS_Y)))
+
 
 def draw_select(game, mouse_pos):
     draw_text_shadowed(
@@ -174,7 +191,12 @@ def draw_select(game, mouse_pos):
 
 def draw_play(game, mouse_pos):
     # HUD：圆角面板 + 关卡 / 剩余箭头 / 剩余失误（图标式）
-    draw_panel(game.screen, HUD_PANEL, radius=16)
+    # AI 演示时面板加高一行显示提示标签，避免与底栏计时重叠
+    if game.ai_mode:
+        panel = (*HUD_PANEL[:3], HUD_PANEL_AI_H)
+    else:
+        panel = HUD_PANEL
+    draw_panel(game.screen, panel, radius=16)
     if game.is_random():
         title = "随机挑战"
     else:
@@ -194,6 +216,9 @@ def draw_play(game, mouse_pos):
         else:
             pygame.draw.circle(game.screen, PANEL_LINE, (cx, HUD_TEXT_Y),
                                HUD_DOT_R, 2)
+    if game.ai_mode:
+        tag = game.font_small.render("AI 演示中（不计成绩）", True, GOLD)
+        game.screen.blit(tag, tag.get_rect(midleft=HUD_AI_TAG_POS))
 
     for btn in game.buttons:
         btn.draw(game.screen, game.font_btn, mouse_pos)
@@ -259,9 +284,6 @@ def draw_play(game, mouse_pos):
     # 底栏右侧：计时
     timer = game.font_hud.render(f"用时 {format_time(game.elapsed)}", True, DIM)
     game.screen.blit(timer, timer.get_rect(midleft=TIMER_POS))
-    if game.ai_mode:
-        tag = game.font_small.render("AI 演示中（不计成绩）", True, GOLD)
-        game.screen.blit(tag, tag.get_rect(midright=(WIDTH - 27, TIMER_POS[1])))
 
 
 def draw_stars(game, cx, cy, stars):
@@ -336,9 +358,18 @@ def draw_result(game, mouse_pos, kind):
             game.screen.blit(
                 score_text, score_text.get_rect(center=(WIDTH // 2, RESULT_SCORE_Y))
             )
-            if result.get("best") and result.get("stars", 0) < 3:
-                hint = game.font_small.render("用更少失误可以拿到三星", True, PANEL_LINE)
-                game.screen.blit(hint, hint.get_rect(center=(WIDTH // 2, RESULT_HINT_Y)))
+            if result.get("random"):
+                hint_text, hint_color = "随机挑战不计入存档", PANEL_LINE
+            elif result.get("new_record"):
+                hint_text = "新纪录！成绩已保存" if result.get("saved") \
+                    else "新纪录！但存档写入失败"
+                hint_color = GOLD if result.get("saved") else RED
+            else:
+                hint_text = "未破纪录 · 用更少失误可拿三星" \
+                    if result.get("stars", 0) < 3 else "未破纪录 · 最好成绩已保存"
+                hint_color = PANEL_LINE
+            hint = game.font_small.render(hint_text, True, hint_color)
+            game.screen.blit(hint, hint.get_rect(center=(WIDTH // 2, RESULT_HINT_Y)))
     else:
         sub = game.font_msg.render(
             ("随机关卡失误用完了，换一关试试吧" if result.get("random")
