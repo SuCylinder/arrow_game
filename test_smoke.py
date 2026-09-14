@@ -3,10 +3,10 @@
 
 覆盖：
   A 通关与状态机      参考解法逐关通关（只点头部）、按钮/Esc/R、下一关/回开始
-  B 点击与路径检测    can_fly 边界/阻挡、点身体无效、第 N 步才可飞的正确性
-  C 滑出动画几何      长度 1~4 × 各方向：中途可见、结束完全出界、无空转（像素采样）
-  D 渲染             箭头朝向、身体压暗色、三段 HUD、按钮、结果界面
-  E 关卡数据性质      定义不越界/不重叠、长度 1~4、参考解覆盖全部箭头、倒序摆盘可飞
+  B 点击与路径检测    can_fly 边界/阻挡、点身体无效、蛇形身体不堵自己、形状校验
+  C 滑出动画几何      长度 1~5 × 直/弯 × 各方向：中途可见、结束完全出界、无空转
+  D 渲染             箭头朝向、身体压暗色（含拐点）、三段 HUD、按钮、结果界面
+  E 关卡数据性质      定义合法、长度 1~5、全部有身体、蛇形占比、参考解、倒序摆盘
   F 碰撞与失败窗口    整支晃动变色、扣失误、归零后锁操作、不误判通关
   G 模糊测试          随机点击+按键 6000 步的不变量检查、随机乱点必达终局
   H 真实入口          main.main() 线程跑主循环，注入事件后干净退出
@@ -38,11 +38,11 @@ N = cfg.N
 CELL = cfg.CELL
 GX, GY, GW = cfg.GRID_X, cfg.GRID_Y, cfg.GRID_W
 
-# 各关参考通关顺序（都是头部坐标，与 arrow/levels.py 注释一致）
+# 各关参考通关顺序（都是头部坐标，与 arrow/levels/levelN.py 注释一致）
 ORDERS = [
-    [(4, 4), (4, 2), (0, 1), (2, 3), (1, 0)],
-    [(3, 4), (0, 2), (2, 3), (4, 0), (2, 4), (0, 0), (2, 1)],
-    [(4, 4), (0, 4), (2, 4), (4, 2), (1, 2), (0, 0), (1, 0), (0, 3)],
+    [(1, 2), (4, 1), (3, 3), (1, 0), (1, 4)],
+    [(4, 2), (1, 0), (4, 4), (0, 1), (3, 3), (2, 2), (4, 0)],
+    [(0, 0), (4, 0), (4, 4), (0, 2), (3, 0), (4, 3), (2, 4), (1, 4)],
 ]
 
 FAILURES = []
@@ -79,6 +79,17 @@ def key_event(k):
 
 def cell_center(r, c):
     return (GX + c * CELL + CELL // 2, GY + r * CELL + CELL // 2)
+
+
+def turns_of(cells):
+    """数一条路径的拐弯次数。"""
+    t = 0
+    for k in range(1, len(cells) - 1):
+        d1 = (cells[k][0] - cells[k - 1][0], cells[k][1] - cells[k - 1][1])
+        d2 = (cells[k + 1][0] - cells[k][0], cells[k + 1][1] - cells[k][1])
+        if d1 != d2:
+            t += 1
+    return t
 
 
 pygame.init()
@@ -159,15 +170,15 @@ check("点「回开始」回开始界面", game.state == cfg.STATE_START)
 
 
 # ---------------- B. 点击与路径检测 ----------------
-# 构造一个长 2 的朝上箭头：head=(3,2)，身体 (4,2)
-board, arrows = logic.build_arrows([(cfg.UP, 2, 3, 2)])
+# 直线朝上：头 (3,2)，身体 (4,2)
+board, arrows = logic.build_arrows([(cfg.UP, [(3, 2), (4, 2)])])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
 game.state = cfg.STATE_PLAY
 game.mistakes_left = cfg.MISTAKES_PER_LEVEL
 game.anims.clear()
 
-check("自己身体不挡自己（长 2 朝上可飞）", game.can_fly(3, 2))
+check("自己身体不挡自己（直身朝上可飞）", game.can_fly(3, 2))
 
 # 点身体格子：不触发动画、不扣失误、提示只能点头部
 game.try_click(4, 2)
@@ -180,14 +191,14 @@ game.try_click(3, 2)
 check("点头部触发飞出动画", len(game.anims) == 1
       and isinstance(game.anims[0], FlyAnim))
 game.update(1.0)
-check("长出整支箭头的所有格都被清除", game.board[3][2] == cfg.EMPTY
+check("整支箭头的所有格都被清除", game.board[3][2] == cfg.EMPTY
       and game.board[4][2] == cfg.EMPTY)
 check("箭头活状态置为 False", not arrows[0].alive)
 
-# 别人的身体会挡路：长 2 朝上的身体 (4,2) 挡住 (4,4) 朝左的箭头
+# 别人的身体会挡路：直身朝上的身体 (4,2) 挡住 (4,4) 朝左的箭头
 board, arrows = logic.build_arrows([
-    (cfg.UP, 2, 3, 2),        # 头 (3,2)，身体 (4,2)
-    (cfg.LEFT, 1, 4, 4),      # 头 (4,4)，朝左，路径上会撞到 (4,2)
+    (cfg.UP, [(3, 2), (4, 2)]),          # 头 (3,2)，身体 (4,2)
+    (cfg.LEFT, [(4, 4)]),                # 头 (4,4)，朝左，路径上会撞到 (4,2)
 ])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
@@ -196,25 +207,74 @@ check("别人的身体会挡路（(4,4)左 → 被 (4,2) 身体挡）", not game
 
 # 身体在路径上仍会被挡 / 路径不经过身体则可飞
 board, arrows = logic.build_arrows([
-    (cfg.UP, 2, 3, 0),        # 头 (3,0)，身体 (4,0)
-    (cfg.LEFT, 1, 4, 4),      # 朝左，路径 (4,3)(4,2)(4,1)(4,0)
+    (cfg.UP, [(3, 0), (4, 0)]),          # 头 (3,0)，身体 (4,0)
+    (cfg.LEFT, [(4, 4)]),                # 朝左，路径 (4,3)(4,2)(4,1)(4,0)
 ])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
 game.anims.clear()
 check("身体在路径上仍会被挡（(4,0) 身体挡 (4,4)）", not game.can_fly(4, 4))
 board, arrows = logic.build_arrows([
-    (cfg.UP, 2, 3, 1),        # 头 (3,1)，身体 (4,1)
-    (cfg.LEFT, 1, 2, 4),      # 头 (2,4) 朝左，路径 (2,3)(2,2)(2,1)(2,0)，不经过身体
+    (cfg.UP, [(3, 1), (4, 1)]),          # 头 (3,1)，身体 (4,1)
+    (cfg.LEFT, [(2, 3), (2, 4)]),        # 头 (2,3) 朝左，路径 (2,2)(2,1)(2,0) 不经过身体
 ])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
-check("路径不经过身体时可飞", game.can_fly(2, 4))
+check("路径不经过身体时可飞", game.can_fly(2, 3))
+
+# ---- 蛇形专项 ----
+# 蛇身向前拐：头 (3,2) 朝上，身体 (4,2)→(4,1)，(4,1) 在头前方走廊左侧
+# 自己不吃自己：整支平移，身体所有格一起走，不互相阻挡
+board, arrows = logic.build_arrows([
+    (cfg.UP, [(3, 2), (4, 2), (4, 1)]),
+])
+game.board, game.arrows = board, arrows
+game.arrow_by_id = {a.id: a for a in arrows}
+check("蛇身拐到前方走廊时自己仍可飞", game.can_fly(3, 2))
+
+# 但别人的身体会挡：另一支箭头的身体格 (1,2) 正好在自家走廊里
+board, arrows = logic.build_arrows([
+    (cfg.UP, [(3, 2), (4, 2), (4, 1)]),  # 头 (3,2)，走廊 (2,2)(1,2)(0,2)
+    (cfg.UP, [(0, 2), (1, 2)]),          # 头 (0,2)，身体 (1,2) 挡住走廊
+])
+game.board, game.arrows = board, arrows
+game.arrow_by_id = {a.id: a for a in arrows}
+game.anims.clear()
+check("别人的身体进入自家走廊 → 不可飞", not game.can_fly(3, 2))
+
+# 形状校验：不邻接、重复、脖子不在头正后方、超长
+bad_defs = [
+    ("方向非法", [(cfg.UP, [(3, 2), (4, 2)])], 99),
+    ("脖子不在头正后方", [(cfg.UP, [(3, 2), (3, 3)])], None),
+    ("身体不连续", [(cfg.UP, [(3, 2), (4, 2), (4, 4)])], None),
+    ("路径重复格", [(cfg.UP, [(3, 2), (4, 2), (4, 2)])], None),
+    ("长度超上限", [(cfg.UP, [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (4, 1)])], None),
+]
+for label, defs, bad_dir in bad_defs:
+    if bad_dir is not None:
+        defs = [(bad_dir, defs[0][1])]
+    try:
+        logic.build_arrows(defs)
+        check(f"非法定义抛 ValueError：{label}", False)
+    except ValueError:
+        check(f"非法定义抛 ValueError：{label}", True)
+
+# 越界与重叠
+try:
+    logic.build_arrows([(cfg.UP, [(0, 1), (1, 1), (1, 0), (0, 0), (0, -1)])])
+    check("越界定义抛 ValueError", False)
+except ValueError:
+    check("越界定义抛 ValueError", True)
+try:
+    logic.build_arrows([(cfg.UP, [(3, 0), (4, 0)]), (cfg.UP, [(4, 0), (4, 1)])])
+    check("重叠定义抛 ValueError", False)
+except ValueError:
+    check("重叠定义抛 ValueError", True)
 
 # 基础 can_fly 边界测试
 board, arrows = logic.build_arrows([
-    (cfg.UP, 1, 0, 0), (cfg.RIGHT, 1, 0, 4),
-    (cfg.LEFT, 1, 4, 0), (cfg.DOWN, 1, 4, 4),
+    (cfg.UP, [(0, 0)]), (cfg.RIGHT, [(0, 4)]),
+    (cfg.LEFT, [(4, 0)]), (cfg.DOWN, [(4, 4)]),
 ])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
@@ -222,41 +282,26 @@ check("四角朝外均可飞（边界不越界）",
       all(game.can_fly(r, c) for r, c in [(0, 0), (0, 4), (4, 0), (4, 4)]))
 
 board, arrows = logic.build_arrows([
-    (cfg.RIGHT, 1, 2, 0), (cfg.UP, 1, 2, 3),
+    (cfg.RIGHT, [(2, 0)]), (cfg.UP, [(2, 3)]),
 ])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
 check("同行中间有阻挡 → 不可飞", not game.can_fly(2, 0))
 
 board, arrows = logic.build_arrows([
-    (cfg.DOWN, 1, 1, 1), (cfg.UP, 1, 4, 1),
+    (cfg.DOWN, [(1, 1)]), (cfg.UP, [(4, 1)]),
 ])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
 check("同列最远端有阻挡 → 不可飞", not game.can_fly(1, 1))
 
-# 长 4 箭头（最大长度）：朝上的头在顶行，身体向下铺满一列
-board, arrows = logic.build_arrows([(cfg.UP, 4, 0, 0)])
+# 最长 5 格箭头（含蛇形）：头朝上，身体向下再折向右
+board, arrows = logic.build_arrows([(cfg.UP, [(0, 0), (1, 0), (1, 1), (2, 1), (2, 2)])])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
-check("长度 4 箭头构造正确", arrows[0].cells == [(0, 0), (1, 0), (2, 0), (3, 0)])
-check("长度 4 箭头朝上可飞", game.can_fly(0, 0))
-
-try:
-    logic.build_arrows([(cfg.DOWN, 4, 0, 0)])   # 身体向上越过顶边
-    check("越界箭头定义抛 ValueError", False)
-except ValueError:
-    check("越界箭头定义抛 ValueError", True)
-try:
-    logic.build_arrows([(cfg.UP, 3, 0, 0), (cfg.UP, 2, 2, 0)])  # (2,0) 重叠
-    check("重叠箭头定义抛 ValueError", False)
-except ValueError:
-    check("重叠箭头定义抛 ValueError", True)
-try:
-    logic.build_arrows([(cfg.UP, 5, 4, 4)])
-    check("超长（>4）箭头定义抛 ValueError", False)
-except ValueError:
-    check("超长（>4）箭头定义抛 ValueError", True)
+check("长度 5 蛇形箭头构造正确",
+      arrows[0].cells == [(0, 0), (1, 0), (1, 1), (2, 1), (2, 2)])
+check("长度 5 蛇形箭头可飞", game.can_fly(0, 0))
 
 
 # ---------------- C. 滑出动画几何（像素采样） ----------------
@@ -273,62 +318,121 @@ def arrow_pixels(colors, step=6):
     return count
 
 
-# 长度 1~4 × 各方向 × 若干头位置
-# 注意身体在头的后方：UP 箭头身体向下，所以头行 r ≤ N-L；DOWN 箭头头行 r ≥ L-1
+# 直线用例：长度 1~5 × 各方向 × 若干头位置
 fly_cases = []
-for length in (1, 2, 3, 4):
+for length in (1, 2, 3, 4, 5):
     for r in range(0, N - length + 1):
-        fly_cases.append((cfg.UP, length, r, 2))
+        fly_cases.append((cfg.UP, [(r + k, 2) for k in range(length)]))
     for r in range(length - 1, N):
-        fly_cases.append((cfg.DOWN, length, r, 2))
+        fly_cases.append((cfg.DOWN, [(r - k, 2) for k in range(length)]))
     for c in range(0, N - length + 1):
-        fly_cases.append((cfg.LEFT, length, 2, c))
+        fly_cases.append((cfg.LEFT, [(2, c + k) for k in range(length)]))
     for c in range(length - 1, N):
-        fly_cases.append((cfg.RIGHT, length, 2, c))
+        fly_cases.append((cfg.RIGHT, [(2, c - k) for k in range(length)]))
+
+# 蛇形用例：明显拐弯的几支（脖子必须在头正后方）
+fly_cases += [
+    (cfg.UP, [(3, 2), (4, 2), (4, 1)]),                  # 拐 1 次
+    (cfg.DOWN, [(2, 0), (1, 0), (1, 1), (0, 1)]),        # 拐 2 次
+    (cfg.LEFT, [(4, 3), (4, 4), (3, 4)]),                # 拐 1 次
+    (cfg.RIGHT, [(0, 1), (0, 0), (1, 0), (1, 1)]),       # 拐 2 次
+    (cfg.DOWN, [(2, 4), (1, 4), (1, 3), (0, 3), (0, 2)]),  # 拐 3 次
+]
 
 mid_visible = 0
 fully_out = 0
-no_spin = 0
+order_bad = []
+spacing_bad = []
+trail_bad = []
 bad = []
-for (d, length, r, c) in fly_cases:
-    board, arrows = logic.build_arrows([(d, length, r, c)])
+
+
+def inside(pt):
+    """格坐标（中心出界口径）是否仍在棋盘内。"""
+    r, c = pt
+    return -0.5 <= r <= N - 0.5 and -0.5 <= c <= N - 0.5
+
+
+for (d, cells) in fly_cases:
+    board, arrows = logic.build_arrows([(d, cells)])
     game.board, game.arrows = board, arrows
     game.arrow_by_id = {a.id: a for a in arrows}
     game.anims.clear()
     game.state = cfg.STATE_PLAY
     game.mistakes_left = cfg.MISTAKES_PER_LEVEL
+    r, c = cells[0]
     if not game.can_fly(r, c):
-        bad.append(("不可飞", d, length, r, c))
+        bad.append(("不可飞", d, cells))
         continue
     game.try_click(r, c)
     anim = game.anims[0]
     colors = [cfg.ARROW_COLORS[d], utils.darken(cfg.ARROW_COLORS[d])]
+    label = (d, cells)
+    expected = [cfg.TAIL_EXT] + [1.0] * (len(cells) - 1) if len(cells) > 1 else []
 
-    game.update(anim.duration * 0.5)           # 中途：应仍可见
-    game.draw()
-    if arrow_pixels(colors) > 0:
-        mid_visible += 1
+    def dist(a, b):
+        return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
-    game.update(anim.duration * 0.45)          # 95%：应已基本滑出
-    game.draw()
-    px95 = arrow_pixels(colors)
+    # ① 起始瞬间形状 = 静止形状：间距精确 = TAIL_EXT + 1.0×k
+    gp = anim.grid_points()
+    for k in range(len(gp) - 1):
+        if abs(dist(gp[k], gp[k + 1]) - expected[k]) > 1e-9:
+            spacing_bad.append((label, "起始", k))
 
-    game.update(anim.duration * 0.05)          # 100%：应完全出界
+    # ② 滑行中按时间顺序采样：身体不拉伸（弯折处直线距离只缩不长）
+    base = cfg.TAIL_EXT + (len(cells) - 1) if len(cells) > 1 else None
+    p_base = None
+    checkpoints = [0.25, 0.5, 0.75]
+    if base is not None:
+        p_base = 1 - (1 - base / anim.total) ** (1 / 3)
+        checkpoints.append(p_base)
+    for p in sorted(checkpoints):
+        game.update(max(0.0, anim.duration * p - anim.elapsed))
+        gp = anim.grid_points()
+        for k in range(len(gp) - 1):
+            if dist(gp[k], gp[k + 1]) > expected[k] + 1e-9:
+                spacing_bad.append((label, p, k))
+        if p == 0.5:
+            game.draw()
+            if arrow_pixels(colors) > 0:
+                mid_visible += 1
+        # ③ 尾巴延伸点滑到头部原格（整段身体流过一次）
+        if base is not None and p == p_base:
+            if abs(gp[0][0] - r) > 1e-9 or abs(gp[0][1] - c) > 1e-9:
+                trail_bad.append((label, gp[0]))
+
+    # ④ 头先出、尾后出：细采样找头中心出界的滑行量
+    s_head = None
+    for i in range(1, 201):
+        s = anim.total * i / 200
+        if not inside(anim.nodes(s)[-1]):
+            s_head = s
+            break
+    if s_head is None:
+        order_bad.append((label, "头未在时长内出界"))
+    else:
+        if not all(inside(pt) for pt in anim.nodes(s_head)[:-1]):
+            order_bad.append((label, "头出界时身体已有节点出界"))
+        if not all(not inside(pt) for pt in anim.nodes(anim.total)):
+            order_bad.append((label, "结束时仍有节点未出界"))
+
+    # ⑤ 结束：完全出界 + 棋盘数据清除
+    game.update(anim.duration - anim.elapsed)
     game.draw()
     if arrow_pixels(colors) == 0:
         fully_out += 1
-    if px95 <= 30:
-        no_spin += 1
     if game.board[r][c] != cfg.EMPTY:
-        bad.append(("结束未清除", d, length, r, c))
+        bad.append(("结束未清除", d, cells))
 
 total = len(fly_cases)
 check(f"飞出用例全部可飞（{total} 例）", not bad)
 check(f"飞出动画中途仍可见（{mid_visible}/{total}）", mid_visible == total)
 check(f"飞出动画结束完全出界（{fully_out}/{total}）", fully_out == total)
-check(f"飞出动画无末尾空转（{no_spin}/{total}）",
-      no_spin >= int(total * 0.9))
-for item in bad[:5]:
+check(f"蛇形跟随：起始形状=静止形状，滑行不拉伸（{total} 例）",
+      not spacing_bad)
+check(f"蛇形跟随：头先出尾后出（{total} 例）", not order_bad)
+check(f"蛇形跟随：尾巴延伸点流过头部原格（{total} 例）", not trail_bad)
+for item in (bad + spacing_bad + order_bad + trail_bad)[:5]:
     print("  BAD:", item)
 
 
@@ -337,7 +441,7 @@ game.start_game()
 game.draw()
 DIRS = cfg.DIRS
 
-# 头部朝向：顶点一侧应有箭头色（多格箭头也一样，身体在反方向）
+# 头部朝向：顶点一侧应有箭头色
 dir_checked = 0
 for arrow in game.arrows:
     r, c = arrow.head
@@ -350,38 +454,47 @@ for arrow in game.arrows:
     dir_checked += 1
 check(f"头部朝向检查已覆盖（{dir_checked} 支）", dir_checked >= 5)
 
-# 多格箭头：身体格中心应是压暗的身体色，且与头部色不同
+# 多格箭头：每个身体格中心应是压暗的身体色（含拐点格）
 body_checked = 0
-for r in range(N):
-    for c in range(N):
-        v = game.board[r][c]
-        if v == cfg.EMPTY:
-            continue
-        arrow = game.arrow_by_id[v]
-        if arrow.length < 2:
-            continue
-        d = arrow.direction
-        color = cfg.ARROW_COLORS[d]
-        body_color = utils.darken(color)
-        for (br, bc) in arrow.cells[1:]:
-            center = game.screen.get_at((GX + bc * CELL + CELL // 2,
-                                         GY + br * CELL + CELL // 2))
-            check(f"({br},{bc}) 身体格中心为压暗色", near(center, body_color))
-            check(f"({br},{bc}) 身体色与头部色可区分",
-                  not near(body_color, color, 8))
-            body_checked += 1
-check(f"多格箭头身体渲染已覆盖（{body_checked} 格）", body_checked >= 3)
+for arrow in game.arrows:
+    if arrow.length < 2:
+        continue
+    color = cfg.ARROW_COLORS[arrow.direction]
+    body_color = utils.darken(color)
+    for (br, bc) in arrow.cells[1:]:
+        center = game.screen.get_at(cell_center(br, bc))
+        check(f"({br},{bc}) 身体格中心为压暗色", near(center, body_color))
+        body_checked += 1
+    check(f"箭头身体色与头部色可区分",
+          not near(body_color, color, 8))
+check(f"多格箭头身体渲染已覆盖（{body_checked} 格）", body_checked >= 5)
 
 # 头部格中心应是头部色（三角覆盖中心）
 head_checked = 0
 for arrow in game.arrows:
     hr, hc = arrow.head
-    center = game.screen.get_at((GX + hc * CELL + CELL // 2,
-                                 GY + hr * CELL + CELL // 2))
+    center = game.screen.get_at(cell_center(hr, hc))
     check(f"({hr},{hc}) 头部格中心为头部色",
           near(center, cfg.ARROW_COLORS[arrow.direction]))
     head_checked += 1
 check(f"头部渲染已覆盖（{head_checked} 支）", head_checked >= 5)
+
+# 拐点渲染：对每支蛇形箭头的拐点格中心采样
+turn_pixels = 0
+for arrow in game.arrows:
+    if arrow.length < 3:
+        continue
+    cells = arrow.cells
+    body_color = utils.darken(cfg.ARROW_COLORS[arrow.direction])
+    for k in range(1, len(cells) - 1):
+        d1 = (cells[k][0] - cells[k - 1][0], cells[k][1] - cells[k - 1][1])
+        d2 = (cells[k + 1][0] - cells[k][0], cells[k + 1][1] - cells[k][1])
+        if d1 != d2:  # 拐点
+            center = game.screen.get_at(cell_center(*cells[k]))
+            check(f"拐点格 {cells[k]} 为身体色（圆角覆盖）",
+                  near(center, body_color))
+            turn_pixels += 1
+check(f"蛇形拐点渲染已覆盖（{turn_pixels} 处）", turn_pixels >= 2)
 
 
 def region_has_text(x0, y0, w, h):
@@ -417,19 +530,28 @@ check("每关都是箭头定义列表且非空",
       all(isinstance(lv, list) and lv for lv in levels.LEVELS))
 
 for idx, defs in enumerate(levels.LEVELS):
-    board, arrows = logic.build_arrows(defs)       # 越界/重叠会抛异常
-    check(f"第{idx + 1}关定义合法（不越界不重叠）", True)
+    board, arrows = logic.build_arrows(defs)       # 非法定义会抛异常
+    check(f"第{idx + 1}关定义合法（不越界不重叠、邻接正确）", True)
     check(f"第{idx + 1}关箭头支数在 5~8", 5 <= len(arrows) <= 8)
     length_list = [a.length for a in arrows]
-    check(f"第{idx + 1}关长度都在 1~4", all(
-        cfg.MIN_LENGTH <= x <= cfg.MAX_LENGTH for x in length_list))
+    check(f"第{idx + 1}关长度都在 {cfg.MIN_LENGTH}~{cfg.MAX_LENGTH}",
+          all(cfg.MIN_LENGTH <= x <= cfg.MAX_LENGTH for x in length_list))
     check(f"第{idx + 1}关全部箭头都有身体（长度≥2）",
           all(x >= 2 for x in length_list))
     check(f"第{idx + 1}关长度混合（至少 2 种长度）",
           len(set(length_list)) >= 2)
+    turn_list = [turns_of(a.cells) for a in arrows]
+    check(f"第{idx + 1}关蛇形箭头 ≥2 支（拐弯数 {turn_list}）",
+          sum(1 for t in turn_list if t >= 1) >= 2)
     # 每支箭头的所有格都指向它自己
     id_ok = all(board[r][c] == a.id for a in arrows for (r, c) in a.cells)
     check(f"第{idx + 1}关棋盘 id 与箭头 cells 一致", id_ok)
+    # 脖子约束：第 2 格必须在头正后方
+    neck_ok = all(
+        a.cells[1] == (a.head[0] - DIRS[a.direction][0],
+                       a.head[1] - DIRS[a.direction][1])
+        for a in arrows if a.length >= 2)
+    check(f"第{idx + 1}关脖子（第 2 格）都在头正后方", neck_ok)
     # 参考解覆盖全部箭头，且倒序摆盘每步可飞
     game.board = empty_board()
     game.arrow_by_id = {}
@@ -464,8 +586,8 @@ for size, sample in [(60, "箭头消除"), (22, "第关剩余失误飞出去了�
 game.level_index = 0
 game.load_level()
 board, arrows = logic.build_arrows([
-    (cfg.RIGHT, 2, 2, 2),     # 头 (2,2)，身体 (2,1)
-    (cfg.LEFT, 1, 2, 4),      # 挡在 (2,2) 右侧
+    (cfg.RIGHT, [(2, 2), (2, 1)]),     # 头 (2,2)，身体 (2,1)
+    (cfg.LEFT, [(2, 4)]),              # 挡在 (2,2) 右侧
 ])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
@@ -515,7 +637,7 @@ game.try_click(0, 0)
 check("点空格提示且不扣失误", game.mistakes_left == 3 and "空格" in game.message)
 
 # 同一支箭头动画期间连点锁定
-board, arrows = logic.build_arrows([(cfg.RIGHT, 2, 2, 2)])
+board, arrows = logic.build_arrows([(cfg.RIGHT, [(2, 2), (2, 1)])])
 game.board, game.arrows = board, arrows
 game.arrow_by_id = {a.id: a for a in arrows}
 game.anims.clear()
@@ -634,13 +756,13 @@ time.sleep(0.6)
 check("真实入口：点「开始游戏」进入 PLAY",
       live.state == cfg.STATE_PLAY and live.level_index == 0)
 
-click_event(cell_center(4, 4))                 # 第 1 关 (4,4) 头部（长 2 右箭头）
+click_event(cell_center(1, 2))                 # 第 1 关 (1,2) 头部（含蛇身）
 time.sleep(0.6)
-check("真实入口：点多格箭头头部运行正常", t.is_alive() and not crashed)
+check("真实入口：点蛇形箭头头部运行正常", t.is_alive() and not crashed)
 
-click_event(cell_center(4, 2))                 # 第 1 关 (4,2) 头部（长 3 下箭头）
+click_event(cell_center(4, 1))                 # 第 1 关 (4,1) 头部（拐 2 次）
 time.sleep(0.6)
-check("真实入口：点第二个箭头运行正常", t.is_alive() and not crashed)
+check("真实入口：点第二条蛇形箭头运行正常", t.is_alive() and not crashed)
 
 key_event(pygame.K_ESCAPE)
 time.sleep(0.6)

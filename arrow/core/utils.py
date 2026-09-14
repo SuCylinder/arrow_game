@@ -10,6 +10,6 @@ def darken(color, factor=BODY_DARKEN):
 
 
 def lerp_color(c1, c2, t):
-    """颜色线性插值，t 取 0~1。"""
+    """颜色线性插值，t 取 0~1。用 round 而非截断，保证 t=0/1 时精确等于端点色。"""
     t = max(0.0, min(1.0, t))
-    return tuple(int(a + (b - a) * t) for a, b in zip(c1, c2))
+    return tuple(round(a + (b - a) * t) for a, b in zip(c1, c2))

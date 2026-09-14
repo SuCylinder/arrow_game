@@ -5,13 +5,19 @@
 """
 
 from arrow.config.layout import (
+    BODY_R,
+    BODY_W,
     CELL,
+    FLY_MARGIN,
     FPS,
     GRID_W,
     GRID_X,
     GRID_Y,
+    HEAD_BASE,
+    HEAD_SIZE,
     HEIGHT,
     N,
+    TAIL_EXT,
     WIDTH,
 )
 from arrow.config.palette import (
@@ -54,6 +60,13 @@ __all__ = [
     "GRID_W",
     "GRID_X",
     "GRID_Y",
+    # 箭头几何
+    "TAIL_EXT",
+    "BODY_W",
+    "BODY_R",
+    "HEAD_SIZE",
+    "HEAD_BASE",
+    "FLY_MARGIN",
     # palette
     "BG",
     "CELL_BG",

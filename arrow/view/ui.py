@@ -3,7 +3,7 @@
 
 import pygame
 
-from arrow.config import CELL, DIRS, DOWN, LEFT, UP
+from arrow.config import BODY_R, BODY_W, CELL, DOWN, HEAD_SIZE, LEFT, TAIL_EXT, UP
 
 
 def make_font(size, bold=False):
@@ -17,7 +17,7 @@ def make_font(size, bold=False):
 
 def draw_arrow_head(surface, cx, cy, direction, color):
     """在 (cx, cy) 处画一个指向 direction 的三角箭头（头部）。"""
-    s = CELL * 0.30
+    s = CELL * HEAD_SIZE
     pts = [(0.0, -s), (s * 0.9, s * 0.72), (-s * 0.9, s * 0.72)]  # 基础形状朝上
     if direction == UP:
         rot = lambda x, y: (x, y)  # noqa: E731
@@ -31,29 +31,34 @@ def draw_arrow_head(surface, cx, cy, direction, color):
     pygame.draw.polygon(surface, color, poly)
 
 
-def draw_arrow_full(surface, head_cx, head_cy, direction, length, color, body_color):
-    """画一支完整箭头：长度 ≥2 先画身体长条，再叠上头部三角形。
+def draw_arrow_polyline(surface, pts, direction, color, body_color):
+    """按像素点列画一支箭头：pts[0] 是头部中心，之后依次是身体与尾端延伸。
 
-    几何约定（都相对头中心）：
-      身体从头中心向后延伸到「尾巴格的远边缘」再多冒 0.06 格（盖住格子
-      之间约 6px 的缝隙），即总长 (length-1) + 0.56 格；身体半宽 0.22 格，
-      比头部三角形底座（0.27 格）略窄，这样能看出箭头尖。
+    几何约定：身体用各节点连成的粗折线画出（半宽 BODY_R 格，比头部三角形
+    底座略窄，这样能看出箭头尖）；每个折点画同色圆做圆角；
+    头部三角形最后叠上。pts 只有一个点时只画头部（单格箭头）。
     """
-    if length > 1:
-        dr, dc = DIRS[direction]
-        ax, ay = dc, dr  # 屏幕坐标下的前进方向（x, y）
-        bx, by = -ax, -ay  # 反方向（身体延伸的方向）
-        tail_cx = head_cx + bx * (length - 1) * CELL
-        tail_cy = head_cy + by * (length - 1) * CELL
-        end_cx = tail_cx + bx * CELL * 0.56
-        end_cy = tail_cy + by * CELL * 0.56
-        px, py = -by, bx  # 身体宽度方向（与前进方向垂直）
-        half = CELL * 0.22
-        corners = [
-            (head_cx + px * half, head_cy + py * half),
-            (head_cx - px * half, head_cy - py * half),
-            (end_cx - px * half, end_cy - py * half),
-            (end_cx + px * half, end_cy + py * half),
-        ]
-        pygame.draw.polygon(surface, body_color, corners)
-    draw_arrow_head(surface, head_cx, head_cy, direction, color)
+    if len(pts) > 1:
+        width = int(CELL * BODY_W)  # 直径 = 2 × BODY_R 格
+        radius = int(CELL * BODY_R)
+        for k in range(len(pts) - 1):
+            pygame.draw.line(surface, body_color, pts[k], pts[k + 1], width)
+        for p in pts:
+            pygame.draw.circle(surface, body_color, (int(p[0]), int(p[1])), radius)
+    draw_arrow_head(surface, pts[0][0], pts[0][1], direction, color)
+
+
+def draw_arrow_full(surface, head_cx, head_cy, arrow, color, body_color):
+    """按箭头静止时的形状画：把头中心与各格错开 (c-hc, r-hr) 格即可。"""
+    hr, hc = arrow.head
+    pts = [
+        (head_cx + (c - hc) * CELL, head_cy + (r - hr) * CELL)
+        for (r, c) in arrow.cells
+    ]
+    if arrow.length > 1:
+        # 尾巴沿最后一段方向再冒 0.56 格（盖住格缝）
+        dr = arrow.cells[-1][0] - arrow.cells[-2][0]
+        dc = arrow.cells[-1][1] - arrow.cells[-2][1]
+        pts.append((pts[-1][0] + dc * CELL * TAIL_EXT,
+                    pts[-1][1] + dr * CELL * TAIL_EXT))
+    draw_arrow_polyline(surface, pts, arrow.direction, color, body_color)
