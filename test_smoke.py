@@ -17,6 +17,7 @@
 import os
 import random
 import sys
+import tempfile
 import threading
 import time
 
@@ -29,8 +30,9 @@ import pygame  # noqa: E402
 import main  # noqa: E402
 from arrow import config as cfg  # noqa: E402
 from arrow import levels  # noqa: E402
-from arrow.core import logic  # noqa: E402
+from arrow.core import generator, logic, save as save_mod, scoring, solver  # noqa: E402
 from arrow.game import Game  # noqa: E402
+from arrow.view import button_layout  # noqa: E402
 from arrow.view.animations import FlyAnim, ShakeAnim  # noqa: E402
 from arrow.view.ui import make_font  # noqa: E402
 
@@ -43,9 +45,15 @@ ORDERS = [
     [(4, 3), (2, 3), (2, 0), (1, 3), (1, 1), (1, 2)],
     [(4, 1), (3, 0), (4, 3), (3, 1), (3, 2), (4, 2), (3, 4), (2, 1)],
     [(4, 1), (0, 0), (0, 4), (2, 1), (1, 4), (1, 1), (4, 2), (3, 2), (3, 4), (2, 0)],
+    [(0, 4), (4, 1), (0, 3), (3, 1), (0, 1), (1, 4),
+     (2, 1), (3, 3), (3, 0), (2, 4), (4, 3), (4, 4)],
+    [(0, 0), (4, 3), (0, 1), (1, 1), (1, 4), (3, 1), (4, 1),
+     (3, 3), (3, 2), (1, 0), (2, 2), (0, 3), (4, 0), (0, 4)],
+    [(2, 3), (0, 4), (3, 1), (0, 3), (0, 0), (4, 4), (1, 4), (0, 2),
+     (0, 1), (1, 3), (3, 0), (4, 3), (4, 2), (4, 0), (2, 2), (4, 1)],
 ]
 
-EXPECTED_COUNTS = [6, 8, 10]
+EXPECTED_COUNTS = [6, 8, 10, 12, 14, 16]
 
 FAILURES = []
 CHECKS = 0
@@ -85,7 +93,10 @@ def cell_center(r, c):
 
 pygame.init()
 check("main.py 复用 arrow.game.Game", main.Game is Game)
-game = Game()
+# 测试用独立存档路径，避免污染仓库里的 save.json
+_tmpdir = tempfile.mkdtemp(prefix="arrow_test_")
+SAVE_PATH = os.path.join(_tmpdir, "save.json")
+game = Game(save_path=SAVE_PATH)
 
 
 # ---------------- A. 通关与状态机 ----------------
@@ -286,10 +297,14 @@ for (d, (r, c)) in fly_cases:
     game.draw()
     px95 = arrow_pixels(colors)
 
-    game.update(anim.duration * 0.05)          # 100%：应完全出界
+    # 99.9%：应完全出界（仍在 PLAY 画面，避免结果界面的徽章/按钮色干扰）
+    game.update(anim.duration * 0.999 - anim.elapsed)
     game.draw()
     if arrow_pixels(colors) == 0:
         fully_out += 1
+
+    # 100%：动画结束、棋盘数据清除
+    game.update(anim.duration - anim.elapsed)
     if px95 <= 10:
         no_spin += 1
     if game.board[r][c] != cfg.EMPTY:
@@ -386,40 +401,139 @@ def region_has_text(x0, y0, w, h):
     return False
 
 
-check("HUD 关卡文字已绘制", region_has_text(24, 25, 130, 26))
-check("HUD 剩余箭头已绘制", region_has_text(170, 25, 120, 26))
-check("HUD 剩余失误已绘制", region_has_text(300, 25, 120, 26))
-check("提示信息已绘制", region_has_text(cfg.WIDTH // 2 - 160, 100, 320, 26))
-check("底部快捷键提示已绘制",
-      region_has_text(cfg.WIDTH // 2 - 120, 610, 240, 26))
+_hud_x = cfg.HUD_TEXT_X
+_hud_y = cfg.HUD_TEXT_Y
+check("HUD 关卡文字已绘制",
+      region_has_text(_hud_x[0], _hud_y - 18, 170, 36))
+check("HUD 剩余箭头已绘制",
+      region_has_text(_hud_x[1], _hud_y - 18, 160, 36))
+check("HUD 剩余失误已绘制",
+      region_has_text(_hud_x[2], _hud_y - 18, 130, 36))
+
+# HUD 面板：左边框应为面板描边色，面板外（右侧）不应是描边色
+panel_edge = game.screen.get_at((cfg.HUD_PANEL[0], _hud_y))[:3]
+outside = game.screen.get_at((cfg.HUD_PANEL[0] + cfg.HUD_PANEL[2] + 12, _hud_y))[:3]
+check("HUD 圆角面板已绘制",
+      near(panel_edge, cfg.PANEL_LINE, 20) and not near(outside, cfg.PANEL_LINE, 20))
+
+# 失误圆点：剩余 3 时应能在面板内找到 3 个填实圆点（红/文本色）
+def dots_color():
+    return cfg.RED if game.mistakes_left <= 1 else cfg.TEXT
+
+
+dot_hits = 0
+for k in range(3):
+    cx = cfg.HUD_DOT_X + k * cfg.HUD_DOT_STEP
+    if near(game.screen.get_at((cx, _hud_y)), dots_color(), 40):
+        dot_hits += 1
+check(f"失误圆点已绘制（3 颗中命中 {dot_hits}）", dot_hits == 3)
+check("提示信息已绘制",
+      region_has_text(cfg.WIDTH // 2 - 220, cfg.MSG_Y - 18, 440, 36))
+check("底栏计时已绘制",
+      region_has_text(cfg.TIMER_POS[0], cfg.TIMER_POS[1] - 16, 220, 32))
 for btn in game.buttons:
     probe = game.screen.get_at((btn.rect.x + 5, btn.rect.centery))
     check(f"按钮「{btn.label}」已绘制",
           any(near(probe, c, 60) for c in
               (cfg.BTN, cfg.BTN_HOVER, cfg.BTN_PRIMARY, cfg.BTN_PRIMARY_HOVER)))
+check("底栏含提示/撤销/AI 演示按钮",
+      all(any(b.label == name for b in game.buttons)
+          for name in ("提示", "撤销", "AI 演示")))
 
 for st, tag in [(cfg.STATE_LOSE, "失败"), (cfg.STATE_WIN, "通关")]:
     game.state = st
     game._build_buttons()
     game.draw()
     check(f"{tag}界面标题已绘制",
-          region_has_text(cfg.WIDTH // 2 - 200, 220, 400, 60))
+          region_has_text(cfg.WIDTH // 2 - 250, cfg.RESULT_TITLE_Y - 38, 500, 76))
     check(f"{tag}界面提示已绘制",
-          region_has_text(cfg.WIDTH // 2 - 200, 310, 400, 40))
+          region_has_text(cfg.WIDTH // 2 - 250, cfg.RESULT_SUB_Y - 20, 500, 40))
 
 # 开始界面文字
 game.to_start()
 game.draw()
 check("开始界面标题已绘制",
-      region_has_text(cfg.WIDTH // 2 - 200, 140, 400, 60))
+      region_has_text(cfg.WIDTH // 2 - 250, cfg.START_TITLE_Y - 45, 500, 90))
 check("开始界面规则已绘制",
-      region_has_text(cfg.WIDTH // 2 - 260, 250, 520, 130))
+      region_has_text(cfg.START_RULES_CENTER[0] - 350,
+                      cfg.START_RULES_CENTER[1] - 120, 700, 240))
+
+# 开始界面四色装饰箭头（标题下方一排）
+deco_hits = 0
+for i, d in enumerate((cfg.UP, cfg.DOWN, cfg.LEFT, cfg.RIGHT)):
+    cx = cfg.WIDTH // 2 + (i - 1.5) * cfg.START_DECO_GAP
+    if near(game.screen.get_at((int(cx), cfg.START_DECO_Y)),
+            cfg.ARROW_COLORS[d], 40):
+        deco_hits += 1
+check(f"开始界面四色装饰箭头已绘制（{deco_hits}/4）", deco_hits == 4)
+
+# 结果界面徽章：通关绿 / 失败红（探针取圆环带）
+_badge_y = cfg.RESULT_BADGE_Y
+_badge_r = cfg.RESULT_BADGE_R - 4
+game.state = cfg.STATE_WIN
+game._build_buttons()
+game.draw()
+win_badge = any(
+    near(game.screen.get_at((cfg.WIDTH // 2 + dx, _badge_y + dy)), cfg.GREEN, 20)
+    for dx, dy in ((0, -_badge_r), (_badge_r, 0), (-_badge_r, 0), (0, _badge_r))
+)
+game.state = cfg.STATE_LOSE
+game._build_buttons()
+game.draw()
+lose_badge = any(
+    near(game.screen.get_at((cfg.WIDTH // 2 + dx, _badge_y + dy)), cfg.RED, 20)
+    for dx, dy in ((0, -_badge_r), (_badge_r, 0), (-_badge_r, 0), (0, _badge_r))
+)
+check("通关界面绿色徽章已绘制", win_badge)
+check("失败界面红色徽章已绘制", lose_badge)
+
+# 通关界面：星级与得分文字
+game.state = cfg.STATE_WIN
+game.result = {"stars": 3, "score": 1770, "time": 6.0,
+               "best": {"stars": 3, "score": 1770, "time": 6.0},
+               "random": False, "ai": False}
+game._build_buttons()
+game.draw()
+check("通关界面星级已绘制",
+      region_has_text(cfg.WIDTH // 2 - 120, cfg.RESULT_STARS_Y - 26, 240, 52))
+check("通关界面得分用时已绘制",
+      region_has_text(cfg.WIDTH // 2 - 220, cfg.RESULT_SCORE_Y - 20, 440, 40))
+
+# 开始界面：三个按钮
+game.to_start()
+game.draw()
+check("开始界面含 开始游戏 / 选择关卡 / 随机挑战",
+      all(any(b.label == name for b in game.buttons)
+          for name in ("开始游戏", "选择关卡", "随机挑战")))
+
+# 关卡选择界面：标题、卡片、锁定与解锁样式
+game.progress["unlocked"] = 2
+game.progress["best"]["1"] = {"stars": 3, "score": 1770, "time": 6.0}
+game.to_select()
+game.draw()
+check("选择界面标题已绘制",
+      region_has_text(cfg.WIDTH // 2 - 160, cfg.SELECT_TITLE_Y - 42, 320, 84))
+cards = button_layout.level_card_rects()
+check("第一张卡片中心有文字（第 1 关）",
+      region_has_text(cards[0].x + 20, cards[0].y + 20,
+                      cards[0].width - 40, 40))
+star_pixels = 0
+for x in range(cards[0].x, cards[0].right, 2):
+    for y in range(cards[0].centery - 18, cards[0].centery + 26, 2):
+        if near(game.screen.get_at((x, y)), cfg.GOLD, 30):
+            star_pixels += 1
+check(f"第 1 关卡片显示金色星级（{star_pixels} 像素）", star_pixels > 5)
+check("未解锁卡片显示灰色遮罩（无金色星）",
+      not any(near(game.screen.get_at((x, y)), cfg.GOLD, 30)
+              for x in range(cards[5].x, cards[5].right, 3)
+              for y in range(cards[5].y, cards[5].bottom, 3)))
+game.to_start()
 
 
 # ---------------- E. 关卡数据性质 ----------------
 check("每关都是箭头定义列表且非空",
       all(isinstance(lv, list) and lv for lv in levels.LEVELS))
-check(f"共 3 个关卡", len(levels.LEVELS) == 3)
+check(f"共 6 个关卡", len(levels.LEVELS) == 6)
 
 for idx, defs in enumerate(levels.LEVELS):
     board, arrows = logic.build_arrows(defs)       # 非法定义会抛异常
@@ -466,8 +580,11 @@ for idx, defs in enumerate(levels.LEVELS):
 
 check("每关失误次数为 3", cfg.MISTAKES_PER_LEVEL == 3)
 
-for size, sample in [(60, "箭头消除"), (22, "第关剩余失误飞出去了重开本"),
-                     (20, "开始游戏下一关回"), (18, "按")]:
+for size, sample in [(cfg.FONT_TITLE, "箭头消除"),
+                     (cfg.FONT_HUD, "第关剩余失误飞出去了重开本"),
+                     (cfg.FONT_BTN, "开始游戏下一关回"),
+                     (cfg.FONT_SMALL, "按提示撤销"),
+                     (cfg.FONT_STAR, "★☆")]:
     font = make_font(size)
     metrics = font.metrics(sample)
     check(f"{size}px 字体覆盖「{sample}」",
@@ -509,6 +626,188 @@ game.restart_level()
 check("重开本关恢复初始棋盘",
       game.board == logic.build_arrows(levels.LEVELS[0])[0])
 check("重开本关失误回满", game.mistakes_left == cfg.MISTAKES_PER_LEVEL)
+
+
+# ---------------- G. 扩展功能 ----------------
+# --- 提示 ---
+game.start_game()
+game.show_hint()
+check("提示高亮一个可飞格", game.hint_cell is not None
+      and game.can_fly(*game.hint_cell))
+check("提示计时已启动", game.hint_timer > 0)
+game.update(cfg.HINT_SECONDS + 0.1)
+check("提示超时后自动清除", game.hint_cell is None)
+game.show_hint()
+check("再次提示可高亮", game.hint_cell is not None)
+game.try_click(*game.hint_cell)      # 操作后提示立即清除
+check("点击操作后提示清除", game.hint_cell is None)
+game.update(1.0)
+
+# --- 撤销 ---
+game.load_level()
+snapshot = [row[:] for row in game.board]
+alive_before = logic.count_arrows(game.arrows)
+pick = solver.greedy_pick(game.board, game.arrows, game.arrow_by_id)
+game.try_click(*pick.head)
+game.update(1.0)
+check("撤销前成功飞走",
+      game.board[pick.head[0]][pick.head[1]] == cfg.EMPTY
+      and logic.count_arrows(game.arrows) == alive_before - 1)
+check("成功步进入撤销栈", len(game.undo_stack) == 1)
+game.undo()
+check("撤销后棋盘恢复原样", game.board == snapshot)
+check("撤销后箭头复活", logic.count_arrows(game.arrows) == alive_before
+      and game.arrow_by_id[snapshot[pick.head[0]][pick.head[1]]].alive)
+game.undo()
+check("撤销栈空时给出提示", "没有可以撤销" in game.message)
+# 碰撞（未成功）不进撤销栈
+game.load_level()
+blocked = next(a for a in game.arrows if not game.can_fly(*a.head))
+game.try_click(*blocked.head)
+game.update(1.0)
+check("碰撞不进入撤销栈", not game.undo_stack)
+check("碰撞后失误已扣", game.mistakes_left == cfg.MISTAKES_PER_LEVEL - 1)
+game.undo()
+check("碰撞后不能撤销（无成功步）", "没有可以撤销" in game.message)
+
+# --- AI 演示（独立存档，避免与其它用例互相影响）---
+ai_path = os.path.join(_tmpdir, "ai_save.json")
+ai_game = Game(save_path=ai_path)
+ai_game.start_game()
+ai_game.toggle_ai()
+check("AI 演示已开启", ai_game.ai_mode)
+check("仅打开开关尚未标记已使用（误开不影响成绩）", not ai_game.ai_used)
+# 手动点击在 AI 模式下被屏蔽（棋盘不变）
+arrow_before = next(a for a in ai_game.arrows if a.alive)
+board_before = [row[:] for row in ai_game.board]
+ai_game.try_click(*arrow_before.head)
+check("AI 演示期间手动点击被屏蔽", ai_game.board == board_before)
+for _ in range(600):
+    ai_game.update(0.1)
+    if ai_game.state != cfg.STATE_PLAY:
+        break
+check("AI 演示自动通关第 1 关", ai_game.state == cfg.STATE_WIN)
+check("AI 演示结果带 ai 标记", ai_game.result.get("ai") is True)
+check("AI 演示不写最好成绩", ai_game.progress["best"].get("1") is None)
+check("AI 演示不解锁下一关", ai_game.unlocked_count() == 1)
+
+# AI 演示期间：撤销与提示被屏蔽
+ai2 = Game(save_path=os.path.join(_tmpdir, "ai2_save.json"))
+ai2.start_game()
+ai2.toggle_ai()
+msg_before = ai2.message
+ai2.undo()
+check("AI 演示期间撤销被屏蔽（不改消息、不入栈）",
+      ai2.message == msg_before and len(ai2.undo_stack) == 0)
+ai2.hint_cell = None
+ai2.show_hint()
+check("AI 演示期间提示被屏蔽", ai2.hint_cell is None)
+
+# 随机挑战失败：标题与提示文案走随机分支
+rng_lose = Game(save_path=os.path.join(_tmpdir, "rng_lose.json"))
+rng_lose.random_level()
+rng_lose.mistakes_left = 0
+rng_lose._finish_lose()
+check("随机挑战失败带 random 标记", rng_lose.result.get("random") is True)
+
+# --- 对局评星与存档 ---
+save_path2 = os.path.join(_tmpdir, "score_save.json")
+fresh = Game(save_path=save_path2)
+fresh.start_game()
+seq = solver.solve_sequence(levels.LEVELS[0])
+for (r, c) in seq:
+    fresh.try_click(r, c)
+    fresh.update(1.0)
+check("无失误通关得 3 星", fresh.state == cfg.STATE_WIN
+      and fresh.result["stars"] == 3)
+check("通关写入存档最好成绩",
+      fresh.progress["best"].get("1", {}).get("stars") == 3)
+check("通关解锁第 2 关", fresh.unlocked_count() >= 2)
+check("存档文件已落盘", os.path.exists(save_path2))
+reloaded = Game(save_path=save_path2)
+check("存档可被重新读取（解锁与成绩保留）",
+      reloaded.unlocked_count() >= 2
+      and reloaded.progress["best"].get("1", {}).get("stars") == 3)
+
+# --- 关卡选择 ---
+reloaded.to_select()
+check("进入关卡选择界面", reloaded.state == cfg.STATE_SELECT)
+cards = button_layout.level_card_rects()
+check("关卡卡片数与总关卡数一致", len(cards) == len(levels.LEVELS))
+reloaded.on_click(cards[0].center)
+check("点已解锁卡片进入该关", reloaded.state == cfg.STATE_PLAY
+      and reloaded.level_index == 0)
+reloaded.to_select()
+last = len(levels.LEVELS) - 1
+check("最后一关在测试存档里仍未解锁", last >= reloaded.unlocked_count())
+reloaded.on_click(cards[last].center)
+check("点未解锁卡片不进入该关", reloaded.state == cfg.STATE_SELECT)
+reloaded.to_start()
+check("选择界面可回开始", reloaded.state == cfg.STATE_START)
+# Esc 从选择界面回开始
+reloaded.to_select()
+key_event(pygame.K_ESCAPE)
+reloaded.handle_events()
+check("选择界面按 Esc 回开始", reloaded.state == cfg.STATE_START)
+
+# --- 随机挑战 ---
+rng_game = Game(save_path=os.path.join(_tmpdir, "rng_save.json"))
+rng_game.random_level()
+check("随机挑战进入 PLAY 且标记为随机",
+      rng_game.state == cfg.STATE_PLAY and rng_game.is_random())
+check("随机关卡非空", len(rng_game.arrows) >= 1)
+check("随机关卡开局有可飞箭头",
+      solver.greedy_pick(rng_game.board, rng_game.arrows,
+                         rng_game.arrow_by_id) is not None)
+best_before = dict(rng_game.progress.get("best", {}))
+unlocked_before = rng_game.progress.get("unlocked", 1)
+for _ in range(600):
+    pick = solver.greedy_pick(rng_game.board, rng_game.arrows,
+                              rng_game.arrow_by_id)
+    if pick is None:
+        break
+    rng_game.try_click(*pick.head)
+    rng_game.update(1.0)
+    if rng_game.state != cfg.STATE_PLAY:
+        break
+check("随机挑战可被贪心通关", rng_game.state == cfg.STATE_WIN)
+check("随机挑战不写入存档",
+      rng_game.progress.get("best", {}) == best_before
+      and rng_game.progress.get("unlocked", 1) == unlocked_before)
+check("随机挑战结算标记 random", rng_game.result.get("random") is True)
+
+# --- 生成器 / 求解器 / 评分 / 存档 纯逻辑 ---
+gen_bad = 0
+for seed in range(120):
+    defs = generator.generate_level(random.Random(seed), 9)
+    if solver.solve_sequence(defs) is None:
+        gen_bad += 1
+check(f"生成器 120 盘全部可解（{gen_bad} 盘异常）", gen_bad == 0)
+
+gen_defs = generator.generate_level(random.Random(1), 12)
+board, arrows = logic.build_arrows(gen_defs)
+check("生成器盘面合法且四方向齐全",
+      len(arrows) == 12 and len({a.direction for a in arrows}) == 4)
+
+check("评分：0 失误 3 星 / 1 失误 2 星 / 2 失误 1 星",
+      scoring.stars_for(3) == 3 and scoring.stars_for(2) == 2
+      and scoring.stars_for(1) == 1)
+check("评分：用时越短分越高（时间奖励单调）",
+      scoring.score_for(6, 3, 0) > scoring.score_for(6, 3, 60)
+      > scoring.score_for(6, 3, 200))
+check("评分：超时后不会反向变高",
+      scoring.score_for(6, 3, 300) == scoring.score_for(6, 3, 600))
+check("时间格式化", scoring.format_time(0) == "00:00"
+      and scoring.format_time(95) == "01:35")
+
+bad_path = os.path.join(_tmpdir, "broken.json")
+with open(bad_path, "w", encoding="utf-8") as f:
+    f.write("{不是合法 JSON")
+check("存档损坏时回退默认值", save_mod.load(bad_path) == save_mod.default_data())
+check("存档写入不存在目录时不崩溃",
+      save_mod.store({"unlocked": 1, "best": {}},
+                     os.path.join(_tmpdir, "no", "such", "dir", "s.json"))
+      in (True, False))
 
 
 # ---------------- G. 模糊测试 ----------------
@@ -629,7 +928,8 @@ time.sleep(2.0)
 check("真实入口：主循环启动", t.is_alive() and bool(created))
 
 live = created[0]
-click_event((cfg.WIDTH // 2, 430 + 26))        # 开始游戏按钮
+start_btn_rect = next(b.rect for b in live.buttons if b.label == "开始游戏")
+click_event(start_btn_rect.center)             # 开始游戏按钮（按实际布局定位）
 time.sleep(0.6)
 check("真实入口：点「开始游戏」进入 PLAY",
       live.state == cfg.STATE_PLAY and live.level_index == 0)
