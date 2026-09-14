@@ -28,10 +28,11 @@ import pygame  # noqa: E402
 
 import main  # noqa: E402
 from arrow import config as cfg  # noqa: E402
-from arrow import levels, logic, utils  # noqa: E402
-from arrow.animations import FlyAnim, ShakeAnim  # noqa: E402
+from arrow import levels  # noqa: E402
+from arrow.core import logic, utils  # noqa: E402
 from arrow.game import Game  # noqa: E402
-from arrow.ui import make_font  # noqa: E402
+from arrow.view.animations import FlyAnim, ShakeAnim  # noqa: E402
+from arrow.view.ui import make_font  # noqa: E402
 
 N = cfg.N
 CELL = cfg.CELL

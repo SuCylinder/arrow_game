@@ -3,8 +3,8 @@
 
 import pygame
 
-from arrow.animations import FlyAnim, ShakeAnim
-from arrow.button import Button
+from arrow.view.animations import FlyAnim, ShakeAnim
+from arrow.view.button import Button
 from arrow.config import (
     ARROW_COLORS,
     BG,
@@ -29,9 +29,9 @@ from arrow.config import (
     WIDTH,
 )
 from arrow.levels import LEVELS
-from arrow.logic import build_arrows, can_fly, count_arrows, fly_distance
-from arrow.ui import draw_arrow_full, make_font
-from arrow.utils import darken
+from arrow.core.logic import build_arrows, can_fly, count_arrows, fly_distance
+from arrow.view.ui import draw_arrow_full, make_font
+from arrow.core.utils import darken
 
 
 class Game:

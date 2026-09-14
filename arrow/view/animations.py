@@ -4,7 +4,7 @@
 import math
 
 from arrow.config import ARROW_COLORS, CELL, DIRS, RED
-from arrow.utils import darken, lerp_color
+from arrow.core.utils import darken, lerp_color
 
 
 class FlyAnim:
